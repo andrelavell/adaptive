@@ -1,41 +1,44 @@
 import { NextResponse } from 'next/server';
+import { getServerMetaToken } from '@/lib/metaToken';
 import { getInsights } from '@/services/meta/client';
-import { getServerMetaToken } from '@/lib/auth';
 
 export async function GET(req: Request) {
-  const token = getServerMetaToken();
-  if (!token) return NextResponse.json({ error: 'Not connected to Meta' }, { status: 401 });
+  const adAccountId = process.env.META_AD_ACCOUNT_ID;
+  if (!adAccountId) return NextResponse.json({ error: 'META_AD_ACCOUNT_ID missing' }, { status: 500 });
 
-  const adAccountId = process.env.META_AD_ACCOUNT_ID?.replace(/[^0-9]/g, '');
-  if (!adAccountId) return NextResponse.json({ error: 'META_AD_ACCOUNT_ID not configured' }, { status: 400 });
+  const token = await getServerMetaToken();
+  if (!token) return NextResponse.json({ error: 'Meta token missing' }, { status: 401 });
 
   const { searchParams } = new URL(req.url);
-  const days = Math.max(1, Math.min(60, Number(searchParams.get('days') || 21)));
-  const until = new Date();
-  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-  const fmt = (d: Date) => d.toISOString().slice(0, 10);
+  let days = Number(searchParams.get('days') || '21');
+  if (!Number.isFinite(days) || days <= 0 || days > 90) days = 21;
 
-  const params: Record<string, any> = {
-    level: 'ad',
-    fields: [
-      'ad_id',
-      'ad_name',
-      'impressions',
-      'clicks',
-      'spend',
-      'cpm',
-      'ctr',
-      'actions',
-    ].join(','),
-    breakdowns: ['publisher_platform'].join(','),
-    time_range: { since: fmt(since), until: fmt(until) },
-    limit: 200,
-  };
+  const fields = (searchParams.get('fields')?.split(',') ?? [
+    'ad_name','ad_id','impressions','clicks','spend','actions','action_values','ctr','cpc','cpm'
+  ]).join(',');
+
+  const level = searchParams.get('level') || 'ad';
+  const breakdowns = searchParams.get('breakdowns') || '';
+  const limit = Number(searchParams.get('limit') || '1000');
+  const datePreset = searchParams.get('date_preset');
+
+  const params: any = { level, fields, limit };
+  if (breakdowns) params.breakdowns = breakdowns;
+  if (datePreset) {
+    params.date_preset = datePreset;
+  } else {
+    const since = new Date(Date.now() - days * 86400000);
+    const until = new Date();
+    params.time_range = {
+      since: since.toISOString().slice(0, 10),
+      until: until.toISOString().slice(0, 10),
+    };
+  }
 
   try {
-    const data = await getInsights(adAccountId, params, token);
-    return NextResponse.json({ ok: true, data });
+    const data = await getInsights(adAccountId, params, token.access_token);
+    return NextResponse.json(data);
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message || 'Insights error' }, { status: 500 });
+    return NextResponse.json({ error: e?.message || 'insights failed' }, { status: 500 });
   }
 }

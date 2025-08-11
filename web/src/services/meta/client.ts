@@ -56,8 +56,10 @@ export async function validateAd(adAccountId: string, payload: any, token?: stri
   return createAd(adAccountId, withValidate, token);
 }
 
-export async function capiPurchase(pixelId: string, event: any, token?: string) {
-  const res = await fetch(`${GRAPH_BASE}/${pixelId}/events`, {
+export async function capiPurchase(pixelId: string, event: any, token?: string, opts?: { testEventCode?: string }) {
+  const url = new URL(`${GRAPH_BASE}/${pixelId}/events`);
+  if (opts?.testEventCode) url.searchParams.set('test_event_code', opts.testEventCode);
+  const res = await fetch(url.toString(), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...authHeader(token) },
     body: JSON.stringify({ data: [event] }),
