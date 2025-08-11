@@ -1,0 +1,13 @@
+{
+  "name": "adaptive-ai",
+  "private": true,
+  "version": "0.1.0",
+  "engines": { "node": ">=20 <21" },
+  "scripts": {
+    "install:web": "npm --prefix web install",
+    "dev": "npm --prefix web run dev",
+    "build": "npm --prefix web run build",
+    "start": "npm --prefix web run start",
+    "db:migrate": "node scripts/migrate.js"
+  }
+}

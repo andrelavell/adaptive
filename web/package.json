@@ -1,0 +1,23 @@
+{
+  "name": "adaptive-ai-web",
+  "private": true,
+  "version": "0.1.0",
+  "engines": { "node": ">=20 <21" },
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "start": "next start -p 3000"
+  },
+  "dependencies": {
+    "next": "14.2.5",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "pg": "8.11.5"
+  },
+  "devDependencies": {
+    "typescript": "5.5.4",
+    "@types/node": "20.12.12",
+    "@types/react": "18.3.3",
+    "@types/react-dom": "18.3.0"
+  }
+}
