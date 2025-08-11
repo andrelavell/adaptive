@@ -1,4 +1,9 @@
 import { Pool } from 'pg';
+import dns from 'node:dns';
+// Prefer IPv4 first to avoid IPv6 ENETUNREACH in some serverless environments
+try {
+  dns.setDefaultResultOrder('ipv4first');
+} catch {}
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {
