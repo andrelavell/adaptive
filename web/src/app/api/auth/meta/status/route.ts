@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
 import { query } from '@/lib/db';
 
 export async function GET() {
@@ -12,9 +13,25 @@ export async function GET() {
     );
     const row = res.rows?.[0];
     const connected = !!row && new Date(row.expires_at) > new Date();
-    return NextResponse.json({ connected, expires_at: row?.expires_at ?? null });
+    if (connected) {
+      return NextResponse.json({ connected: true, expires_at: row!.expires_at });
+    }
   } catch (e: any) {
-    // If DB is not configured, we still return connected false
-    return NextResponse.json({ connected: false, error: e?.message || 'DB error' });
+    // Fall through to cookie fallback
   }
+
+  // Cookie fallback: set by /api/auth/meta/callback
+  try {
+    const jar = cookies();
+    const raw = jar.get('meta_token')?.value;
+    if (raw) {
+      const parsed = JSON.parse(raw) as { access_token?: string; expires_at?: string };
+      const valid = !!parsed.access_token && !!parsed.expires_at && new Date(parsed.expires_at!) > new Date();
+      return NextResponse.json({ connected: valid, expires_at: valid ? parsed.expires_at! : null });
+    }
+  } catch (e: any) {
+    return NextResponse.json({ connected: false, error: e?.message || 'cookie parse error' });
+  }
+
+  return NextResponse.json({ connected: false, expires_at: null });
 }

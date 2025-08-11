@@ -14,15 +14,37 @@ export async function GET(req: Request) {
   const redirect = process.env.META_REDIRECT_URI || `${base}/api/auth/meta/callback`;
   const tokens = await exchangeToken(code, redirect);
 
-  // Persist long-lived token (replace with encryption at rest)
+  // Compute expiry and prepare response
+  const maxAge = Number(tokens.long.expires_in || 60 * 60 * 24 * 60); // seconds
+  const expiresAtISO = new Date(Date.now() + maxAge * 1000).toISOString();
+  const res = NextResponse.redirect(process.env.APP_BASE_URL || '/');
+
+  // Always set a cookie fallback so the app works even if DB is unavailable
+  try {
+    res.cookies.set(
+      'meta_token',
+      JSON.stringify({ access_token: tokens.long.access_token, expires_at: expiresAtISO }),
+      {
+        httpOnly: true,
+        secure: true,
+        sameSite: 'lax',
+        path: '/',
+        maxAge,
+      }
+    );
+  } catch (e) {
+    console.error('Failed setting meta_token cookie', e);
+  }
+
+  // Persist long-lived token (best-effort)
   try {
     await query(
       `INSERT INTO tokens(provider, access_token, token_type, expires_at, meta) VALUES($1,$2,$3, now() + ($4 || ' seconds')::interval, $5)`,
-      ['meta', tokens.long.access_token, tokens.long.token_type || 'bearer', String(tokens.long.expires_in || 60*60*24*60), JSON.stringify(tokens)]
+      ['meta', tokens.long.access_token, tokens.long.token_type || 'bearer', String(maxAge), JSON.stringify(tokens)]
     );
   } catch (e: any) {
     console.error('Token store failed', e);
   }
 
-  return NextResponse.redirect(process.env.APP_BASE_URL || '/');
+  return res;
 }
