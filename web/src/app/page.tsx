@@ -9,6 +9,10 @@ export default function Home() {
   const [autoPublish, setAutoPublish] = useState(false);
   const [metaConnected, setMetaConnected] = useState<null | boolean>(null);
   const [metaExpiresAt, setMetaExpiresAt] = useState<string | null>(null);
+  const [insights, setInsights] = useState<any[] | null>(null);
+  const [insightsLoading, setInsightsLoading] = useState(false);
+  const [capiResp, setCapiResp] = useState<any | null>(null);
+  const [preflightResp, setPreflightResp] = useState<any | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -27,6 +31,48 @@ export default function Home() {
       cancelled = true;
     };
   }, []);
+
+  async function fetchInsights() {
+    setInsightsLoading(true);
+    setInsights(null);
+    try {
+      const res = await fetch(`/api/meta/insights?days=${lookback}`);
+      const data = await res.json();
+      if (data?.data?.data) {
+        setInsights(data.data.data);
+      } else if (data?.data) {
+        setInsights(data.data);
+      } else {
+        setInsights([]);
+      }
+    } catch (e) {
+      setInsights([]);
+    } finally {
+      setInsightsLoading(false);
+    }
+  }
+
+  async function sendCapiTest() {
+    setCapiResp(null);
+    try {
+      const res = await fetch('/api/meta/capi-test', { method: 'POST' });
+      const data = await res.json();
+      setCapiResp(data);
+    } catch (e) {
+      setCapiResp({ ok: false, error: String(e) });
+    }
+  }
+
+  async function runPreflight() {
+    setPreflightResp(null);
+    try {
+      const res = await fetch('/api/meta/validate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
+      const data = await res.json();
+      setPreflightResp(data);
+    } catch (e) {
+      setPreflightResp({ ok: false, error: String(e) });
+    }
+  }
 
   return (
     <div className="stack">
@@ -75,6 +121,62 @@ export default function Home() {
           </label>
         </div>
         <p className="hint">Changes are not persisted yet. OAuth first; then we’ll wire these to the database configs.</p>
+      </section>
+
+      <section className="card">
+        <h2>Insights</h2>
+        <div className="row">
+          <button className="btn" disabled={!metaConnected || insightsLoading} onClick={fetchInsights}>
+            {insightsLoading ? 'Fetching…' : `Fetch last ${lookback}d`}
+          </button>
+          {insights && <span className="hint">rows: {insights.length}</span>}
+        </div>
+        {insights && insights.length > 0 && (
+          <div className="table">
+            <div className="row" style={{ fontWeight: 600 }}>
+              <div style={{ flex: 2 }}>Ad</div>
+              <div>Platform</div>
+              <div>Impr</div>
+              <div>Clicks</div>
+              <div>CTR</div>
+              <div>Spend</div>
+            </div>
+            {insights.slice(0, 10).map((r: any, i: number) => (
+              <div key={i} className="row">
+                <div style={{ flex: 2 }}>{r.ad_name || r.ad_id}</div>
+                <div>{r.publisher_platform || '-'}</div>
+                <div>{r.impressions || 0}</div>
+                <div>{r.clicks || 0}</div>
+                <div>{r.ctr || 0}</div>
+                <div>{r.spend || 0}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="card">
+        <h2>Conversions API (Test)</h2>
+        <div className="row">
+          <button className="btn" disabled={!metaConnected} onClick={sendCapiTest}>Send test Purchase</button>
+          {capiResp && (
+            <span className="hint" title={JSON.stringify(capiResp)}>
+              {capiResp.ok ? 'Sent' : 'Error'}
+            </span>
+          )}
+        </div>
+      </section>
+
+      <section className="card">
+        <h2>Preflight Validate</h2>
+        <div className="row">
+          <button className="btn" disabled={!metaConnected} onClick={runPreflight}>Run Preflight</button>
+          {preflightResp && (
+            <span className="hint" title={JSON.stringify(preflightResp)}>
+              {preflightResp.ok ? 'OK' : 'See errors'}
+            </span>
+          )}
+        </div>
       </section>
     </div>
   );
