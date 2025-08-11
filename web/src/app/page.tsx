@@ -1,19 +1,54 @@
 "use client";
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 export default function Home() {
   const [lookback, setLookback] = useState(21);
   const [dailyCap, setDailyCap] = useState(8);
   const [similarity, setSimilarity] = useState(0.7);
   const [autoPublish, setAutoPublish] = useState(false);
+  const [metaConnected, setMetaConnected] = useState<null | boolean>(null);
+  const [metaExpiresAt, setMetaExpiresAt] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/auth/meta/status')
+      .then((r) => r.json())
+      .then((d) => {
+        if (cancelled) return;
+        setMetaConnected(!!d.connected);
+        setMetaExpiresAt(d.expires_at ?? null);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setMetaConnected(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <div className="stack">
       <section className="card">
         <h2>Connect Meta</h2>
         <p>Authorize ads_read and ads_management to enable insights and publishing.</p>
-        <a className="btn" href="/api/auth/meta/start">Connect Meta</a>
+        {metaConnected === null && (
+          <button className="btn" disabled>Checking connection…</button>
+        )}
+        {metaConnected === false && (
+          <a className="btn" href="/api/auth/meta/start">Connect Meta</a>
+        )}
+        {metaConnected === true && (
+          <div className="row" role="status" aria-live="polite">
+            <span className="btn" style={{ pointerEvents: 'none', opacity: 0.8 }}>
+              ✅ Connected to Meta
+            </span>
+            {metaExpiresAt && (
+              <span className="hint">token expires: {new Date(metaExpiresAt).toLocaleString()}</span>
+            )}
+          </div>
+        )}
       </section>
 
       <section className="card">
