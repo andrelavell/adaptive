@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getServerMetaToken } from '@/lib/metaToken';
 import { getInsights } from '@/services/meta/client';
+import { query as dbQuery } from '@/lib/db';
 
 function pick<T = any>(arr: any[] | undefined, keys: string[]): T | null {
   if (!Array.isArray(arr)) return null;
@@ -21,6 +22,7 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const days = Math.min(Math.max(Number(searchParams.get('days') || '21'), 1), 90);
   const limit = Math.min(Math.max(Number(searchParams.get('limit') || '1000'), 1), 5000);
+  const persist = searchParams.get('persist') === '1' || searchParams.get('persist') === 'true';
   const breakdowns = searchParams.get('breakdowns') || '';
 
   const fields = [
@@ -103,11 +105,56 @@ export async function GET(req: Request) {
 
     normalized.sort((a, b) => b.score - a.score);
 
+    let persisted = 0;
+    let dbStatus: 'ok' | 'skipped' | 'error' = 'skipped';
+    if (persist) {
+      try {
+        const sinceStr = since.toISOString().slice(0, 10);
+        const untilStr = until.toISOString().slice(0, 10);
+        const batchSize = 200;
+        for (let i = 0; i < normalized.length; i += batchSize) {
+          const batch = normalized.slice(i, i + batchSize);
+          const valuesPlaceholders: string[] = [];
+          const params: any[] = [];
+          batch.forEach((n, idx) => {
+            const base = idx * 11;
+            valuesPlaceholders.push(`($${base + 1},$${base + 2},$${base + 3},$${base + 4},$${base + 5},$${base + 6},$${base + 7},$${base + 8},$${base + 9},$${base + 10},$${base + 11}, NOW())`);
+            const roas = n.purchase_roas && n.purchase_roas > 0 ? Number(n.purchase_roas) : (n.spend > 0 ? Number(n.purchase_value) / Number(n.spend) : null);
+            params.push(
+              'ad',               // scope
+              n.ad_id,            // ref_id
+              sinceStr,           // window_since
+              untilStr,           // window_until
+              Number(n.impressions) || 0,
+              Number(n.clicks) || 0,
+              Number(n.purchases) || 0,
+              Number(n.spend) || 0,
+              Number(n.purchase_value) || 0,        // revenue
+              Number(n.ctr_pct) / 100 || 0,         // ctr as 0..1
+              roas === null ? null : Number(roas)   // roas
+            );
+          });
+          const sql = `INSERT INTO performance_metrics (
+            scope, ref_id, window_since, window_until,
+            impressions, clicks, purchases, spend, revenue, ctr, roas, created_at
+          ) VALUES ${valuesPlaceholders.join(',')}`;
+          await dbQuery(sql, params);
+          persisted += batch.length;
+        }
+        dbStatus = 'ok';
+      } catch (e) {
+        dbStatus = 'error';
+      }
+    }
+
     return NextResponse.json({
       since: since.toISOString().slice(0, 10),
       until: until.toISOString().slice(0, 10),
       count: rows.length,
       items: normalized.slice(0, 200),
+      persist,
+      persisted,
+      db: dbStatus,
     });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'ingest failed' }, { status: 500 });
