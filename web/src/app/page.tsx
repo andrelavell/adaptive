@@ -9,10 +9,9 @@ export default function Home() {
   const [autoPublish, setAutoPublish] = useState(false);
   const [metaConnected, setMetaConnected] = useState<null | boolean>(null);
   const [metaExpiresAt, setMetaExpiresAt] = useState<string | null>(null);
-  const [insights, setInsights] = useState<any[] | null>(null);
-  const [insightsLoading, setInsightsLoading] = useState(false);
-  const [capiResp, setCapiResp] = useState<any | null>(null);
-  const [preflightResp, setPreflightResp] = useState<any | null>(null);
+  const [loading, setLoading] = useState<string | null>(null);
+  const [result, setResult] = useState<any | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -32,47 +31,25 @@ export default function Home() {
     };
   }, []);
 
-  async function fetchInsights() {
-    setInsightsLoading(true);
-    setInsights(null);
+  async function callApi(path: string) {
     try {
-      const res = await fetch(`/api/meta/insights?days=${lookback}`);
-      const data = await res.json();
-      if (data?.data?.data) {
-        setInsights(data.data.data);
-      } else if (data?.data) {
-        setInsights(data.data);
-      } else {
-        setInsights([]);
-      }
-    } catch (e) {
-      setInsights([]);
+      setLoading(path);
+      setError(null);
+      setResult(null);
+      const r = await fetch(path, { method: 'GET' });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data?.error || 'Request failed');
+      setResult(data);
+    } catch (e: any) {
+      setError(e?.message || 'Request failed');
     } finally {
-      setInsightsLoading(false);
+      setLoading(null);
     }
   }
 
-  async function sendCapiTest() {
-    setCapiResp(null);
-    try {
-      const res = await fetch('/api/meta/capi-test', { method: 'POST' });
-      const data = await res.json();
-      setCapiResp(data);
-    } catch (e) {
-      setCapiResp({ ok: false, error: String(e) });
-    }
-  }
-
-  async function runPreflight() {
-    setPreflightResp(null);
-    try {
-      const res = await fetch('/api/meta/validate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
-      const data = await res.json();
-      setPreflightResp(data);
-    } catch (e) {
-      setPreflightResp({ ok: false, error: String(e) });
-    }
-  }
+  const fetchInsights = () => callApi(`/api/meta/insights?level=ad&days=${lookback}&limit=200`);
+  const fetchTopCreatives = () => callApi(`/api/meta/insights/top-creatives?days=${lookback}`);
+  const sendTestPurchase = () => callApi(`/api/meta/capi-test?value=12.34&currency=USD`);
 
   return (
     <div className="stack">
@@ -124,59 +101,27 @@ export default function Home() {
       </section>
 
       <section className="card">
-        <h2>Insights</h2>
-        <div className="row">
-          <button className="btn" disabled={!metaConnected || insightsLoading} onClick={fetchInsights}>
-            {insightsLoading ? 'Fetching…' : `Fetch last ${lookback}d`}
+        <h2>Quick Actions</h2>
+        <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+          <button className="btn" onClick={fetchInsights} disabled={metaConnected !== true || !!loading}>
+            {loading?.startsWith('/api/meta/insights') ? 'Loading…' : 'Fetch Insights'}
           </button>
-          {insights && <span className="hint">rows: {insights.length}</span>}
+          <button className="btn" onClick={fetchTopCreatives} disabled={metaConnected !== true || !!loading}>
+            {loading?.startsWith('/api/meta/insights/top-creatives') ? 'Loading…' : 'Top Creatives'}
+          </button>
+          <button className="btn" onClick={sendTestPurchase} disabled={metaConnected !== true || !!loading}>
+            {loading?.startsWith('/api/meta/capi-test') ? 'Sending…' : 'Send Test Purchase'}
+          </button>
         </div>
-        {insights && insights.length > 0 && (
-          <div className="table">
-            <div className="row" style={{ fontWeight: 600 }}>
-              <div style={{ flex: 2 }}>Ad</div>
-              <div>Platform</div>
-              <div>Impr</div>
-              <div>Clicks</div>
-              <div>CTR</div>
-              <div>Spend</div>
-            </div>
-            {insights.slice(0, 10).map((r: any, i: number) => (
-              <div key={i} className="row">
-                <div style={{ flex: 2 }}>{r.ad_name || r.ad_id}</div>
-                <div>{r.publisher_platform || '-'}</div>
-                <div>{r.impressions || 0}</div>
-                <div>{r.clicks || 0}</div>
-                <div>{r.ctr || 0}</div>
-                <div>{r.spend || 0}</div>
-              </div>
-            ))}
-          </div>
+        {error && <p className="hint" style={{ color: 'crimson' }}>Error: {error}</p>}
+        {result && (
+          <pre style={{ maxHeight: 300, overflow: 'auto', background: '#111', color: '#0f0', padding: 12, borderRadius: 8 }}>
+            {JSON.stringify(result, null, 2)}
+          </pre>
         )}
-      </section>
-
-      <section className="card">
-        <h2>Conversions API (Test)</h2>
-        <div className="row">
-          <button className="btn" disabled={!metaConnected} onClick={sendCapiTest}>Send test Purchase</button>
-          {capiResp && (
-            <span className="hint" title={JSON.stringify(capiResp)}>
-              {capiResp.ok ? 'Sent' : 'Error'}
-            </span>
-          )}
-        </div>
-      </section>
-
-      <section className="card">
-        <h2>Preflight Validate</h2>
-        <div className="row">
-          <button className="btn" disabled={!metaConnected} onClick={runPreflight}>Run Preflight</button>
-          {preflightResp && (
-            <span className="hint" title={JSON.stringify(preflightResp)}>
-              {preflightResp.ok ? 'OK' : 'See errors'}
-            </span>
-          )}
-        </div>
+        {metaConnected === false && (
+          <p className="hint">Connect Meta first to enable actions.</p>
+        )}
       </section>
     </div>
   );
