@@ -19,7 +19,7 @@ export async function GET(req: Request) {
   if (!token) return NextResponse.json({ error: 'Meta token missing' }, { status: 401 });
 
   const { searchParams } = new URL(req.url);
-  const days = Math.min(Math.max(Number(searchParams.get('days') || '7'), 1), 90);
+  const days = Math.min(Math.max(Number(searchParams.get('days') || '21'), 1), 90);
   const limit = Math.min(Math.max(Number(searchParams.get('limit') || '500'), 1), 5000);
 
   const fields = [
@@ -29,7 +29,6 @@ export async function GET(req: Request) {
     'clicks',
     'spend',
     'ctr',
-    'cpc',
     'cpm',
     'actions',
     'action_values',
@@ -47,13 +46,13 @@ export async function GET(req: Request) {
       until: until.toISOString().slice(0, 10),
     },
   };
-  // Favor conversion-based reporting
   (params as any).action_attribution_windows = '7d_click,1d_view';
   (params as any).action_report_time = 'conversion';
 
   try {
     const data = await getInsights(adAccountId, params, token.access_token);
     const rows = (data?.data || []) as any[];
+
     const mapped = rows.map((r) => {
       const actions = r.actions || [];
       const action_values = r.action_values || [];
@@ -62,10 +61,22 @@ export async function GET(req: Request) {
       const impressions = Number(r.impressions || 0);
       const clicks = Number(r.clicks || 0);
       const spend = Number(r.spend || 0);
-      const ctr = Number(String(r.ctr || 0).replace('%','')) || (impressions ? (clicks / impressions) * 100 : 0);
+      // Prefer numeric CTR; Meta may return string with '%'
+      const ctrPct = Number(String(r.ctr || 0).replace('%','')) || (impressions ? (clicks / impressions) * 100 : 0);
+      const ctr = ctrPct / 100; // convert to 0..1
       const cpm = Number(r.cpm || 0);
-      const cpc = Number(r.cpc || 0);
-      // purchase_roas may be a number or an array of {action_type, value}
+
+      // Smoothing to avoid div by zero and volatility on tiny samples
+      const eps = 1e-6;
+      const clicks_s = clicks + 1; // add-one smoothing
+      const purchases_s = purchases + 1e-3; // tiny smoothing
+      const cvr = purchases_s / clicks_s; // approximate CVR
+      const aov = purchases > 0 ? purchase_value / purchases : 0;
+
+      // RPME profit heuristic from memory: 1000*CTR*CVR*AOV - CPM
+      const rpme_profit = 1000 * (ctr) * (cvr) * (aov) - cpm;
+
+      // Extract ROAS (can be number or array of {action_type, value})
       let roas = 0;
       if (Array.isArray(r.purchase_roas) && r.purchase_roas.length) {
         const pr = pick(r.purchase_roas, ['purchase', 'omni_purchase', 'offsite_conversion.fb_pixel_purchase']) as any;
@@ -78,34 +89,36 @@ export async function GET(req: Request) {
         roas = Number(r.purchase_roas || 0);
       }
 
-      // Composite score: prioritize ROAS and purchases, then value; CTR as tie-breaker
-      // Weights are heuristic and can be tuned later
-      const score = roas * 10000 + purchases * 2000 + purchase_value * 5 + ctr;
+      // Final score emphasizing ROAS and purchases, with RPME as profitability signal
+      const score = roas * 1000 + rpme_profit + purchases * 50 + (purchase_value || 0) * 0.1;
+
       return {
         ad_id: r.ad_id,
         ad_name: r.ad_name,
         impressions,
         clicks,
-        ctr,
-        spend,
-        cpm,
-        cpc,
         purchases,
         purchase_value,
+        spend,
+        ctr_pct: ctrPct,
+        cvr,
+        aov,
+        cpm,
+        rpme_profit,
         purchase_roas: roas,
         score,
       };
     });
 
     mapped.sort((a, b) => b.score - a.score);
-    const top = mapped.slice(0, 50);
+
     return NextResponse.json({
       since: since.toISOString().slice(0, 10),
       until: until.toISOString().slice(0, 10),
       count: rows.length,
-      top,
+      ranked: mapped.slice(0, 50),
     });
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || 'top creatives failed' }, { status: 500 });
+    return NextResponse.json({ error: e?.message || 'ranked failed' }, { status: 500 });
   }
 }

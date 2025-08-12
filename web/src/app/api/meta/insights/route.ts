@@ -14,7 +14,7 @@ export async function GET(req: Request) {
   if (!Number.isFinite(days) || days <= 0 || days > 90) days = 21;
 
   const fields = (searchParams.get('fields')?.split(',') ?? [
-    'ad_name','ad_id','impressions','clicks','spend','actions','action_values','ctr','cpc','cpm'
+    'ad_name','ad_id','impressions','clicks','spend','actions','action_values','purchase_roas','ctr','cpc','cpm'
   ]).join(',');
 
   const level = searchParams.get('level') || 'ad';
@@ -24,6 +24,12 @@ export async function GET(req: Request) {
 
   const params: any = { level, fields, limit };
   if (breakdowns) params.breakdowns = breakdowns;
+  if (!searchParams.get('action_attribution_windows')) {
+    params.action_attribution_windows = '7d_click,1d_view';
+  }
+  if (!searchParams.get('action_report_time')) {
+    params.action_report_time = 'conversion';
+  }
   if (datePreset) {
     params.date_preset = datePreset;
   } else {
