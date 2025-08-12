@@ -50,6 +50,8 @@ export default function Home() {
   const fetchInsights = () => callApi(`/api/meta/insights?level=ad&days=${lookback}&limit=200`);
   const fetchTopCreatives = () => callApi(`/api/meta/insights/top-creatives?days=${lookback}`);
   const sendTestPurchase = () => callApi(`/api/meta/capi-test?value=12.34&currency=USD`);
+  const fetchRanked = () => callApi(`/api/meta/insights/ranked?days=${lookback}`);
+  const ingestNormalize = () => callApi(`/api/meta/ingest?days=${lookback}`);
 
   return (
     <div className="stack">
@@ -108,6 +110,12 @@ export default function Home() {
           </button>
           <button className="btn" onClick={fetchTopCreatives} disabled={metaConnected !== true || !!loading}>
             {loading?.startsWith('/api/meta/insights/top-creatives') ? 'Loading…' : 'Top Creatives'}
+          </button>
+          <button className="btn" onClick={fetchRanked} disabled={metaConnected !== true || !!loading}>
+            {loading?.startsWith('/api/meta/insights/ranked') ? 'Loading…' : 'Ranked (RPME)'}
+          </button>
+          <button className="btn" onClick={ingestNormalize} disabled={metaConnected !== true || !!loading}>
+            {loading?.startsWith('/api/meta/ingest') ? 'Loading…' : 'Ingest (normalize)'}
           </button>
           <button className="btn" onClick={sendTestPurchase} disabled={metaConnected !== true || !!loading}>
             {loading?.startsWith('/api/meta/capi-test') ? 'Sending…' : 'Send Test Purchase'}
