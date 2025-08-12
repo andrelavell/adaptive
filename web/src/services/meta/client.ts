@@ -15,6 +15,14 @@ export async function getInsights(adAccountId: string, params: Record<string, an
   return res.json();
 }
 
+export async function getAds(adAccountId: string, params: Record<string, any>, token?: string) {
+  const url = new URL(`${GRAPH_BASE}/act_${adAccountId}/ads`);
+  Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, typeof v === 'object' ? JSON.stringify(v) : String(v)));
+  const res = await fetch(url.toString(), { headers: { ...authHeader(token) } });
+  if (!res.ok) throw new Error(`Ads error ${res.status}: ${await res.text()}`);
+  return res.json();
+}
+
 export async function uploadImage(adAccountId: string, file: Blob | Buffer, filename: string, token?: string) {
   const form = new FormData();
   // @ts-ignore

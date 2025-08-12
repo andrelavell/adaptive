@@ -77,10 +77,14 @@ export async function GET(req: Request) {
       } else if (typeof r.purchase_roas === 'number') {
         roas = Number(r.purchase_roas || 0);
       }
+      // Derive effective purchase value if action_values missing
+      const derived_purchase_value = purchase_value > 0 ? purchase_value : (spend > 0 && roas > 0 ? roas * spend : 0);
+      const profit = derived_purchase_value - spend; // revenue - spend
+      const spend_weight = Math.max(1, Math.log10(1 + spend)); // 1 .. ~4 for very large spend
 
-      // Composite score: prioritize ROAS and purchases, then value; CTR as tie-breaker
-      // Weights are heuristic and can be tuned later
-      const score = roas * 10000 + purchases * 2000 + purchase_value * 5 + ctr;
+      // Score emphasizes profit at meaningful spend; purchases as secondary; small ROAS tie-breaker
+      // This de-emphasizes low-spend outliers with high ROAS but negligible volume.
+      const score = profit * spend_weight + purchases * 1000 + roas * 50 + ctr * 0.1;
       return {
         ad_id: r.ad_id,
         ad_name: r.ad_name,
@@ -91,8 +95,10 @@ export async function GET(req: Request) {
         cpm,
         cpc,
         purchases,
-        purchase_value,
+        purchase_value: derived_purchase_value,
         purchase_roas: roas,
+        profit,
+        spend_weight,
         score,
       };
     });

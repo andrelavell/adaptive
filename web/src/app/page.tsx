@@ -57,6 +57,7 @@ export default function Home() {
     const bq = breakdowns.trim() ? `&breakdowns=${encodeURIComponent(breakdowns.trim())}` : '';
     return callApi(`/api/meta/ingest?days=${lookback}${persistToDb ? '&persist=1' : ''}${bq}`);
   };
+  const ingestCreatives = () => callApi(`/api/meta/creatives/ingest?limit=200`);
 
   return (
     <div className="stack">
@@ -121,6 +122,9 @@ export default function Home() {
           </button>
           <button className="btn" onClick={ingestNormalize} disabled={metaConnected !== true || !!loading}>
             {loading?.startsWith('/api/meta/ingest') ? 'Loading…' : 'Ingest (normalize)'}
+          </button>
+          <button className="btn" onClick={ingestCreatives} disabled={metaConnected !== true || !!loading}>
+            {loading?.startsWith('/api/meta/creatives/ingest') ? 'Loading…' : 'Ingest Creatives'}
           </button>
           <button className="btn" onClick={sendTestPurchase} disabled={metaConnected !== true || !!loading}>
             {loading?.startsWith('/api/meta/capi-test') ? 'Sending…' : 'Send Test Purchase'}
