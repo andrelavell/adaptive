@@ -21,6 +21,14 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const days = Math.min(Math.max(Number(searchParams.get('days') || '21'), 1), 90);
   const limit = Math.min(Math.max(Number(searchParams.get('limit') || '500'), 1), 5000);
+  const smoothing = (searchParams.get('smoothing') ?? '1') !== '0';
+  const lcb = (searchParams.get('lcb') ?? '0') === '1';
+  // Priors: light informative defaults
+  const alphaCtr = Number(searchParams.get('alpha_ctr') || '2');
+  const betaCtr  = Number(searchParams.get('beta_ctr')  || '200');
+  const alphaCvr = Number(searchParams.get('alpha_cvr') || '2');
+  const betaCvr  = Number(searchParams.get('beta_cvr')  || '50');
+  const z = Number(searchParams.get('z') || '1.96'); // 95% LCB by default
 
   const fields = [
     'ad_id',
@@ -66,15 +74,24 @@ export async function GET(req: Request) {
       const ctr = ctrPct / 100; // convert to 0..1
       const cpm = Number(r.cpm || 0);
 
-      // Smoothing to avoid div by zero and volatility on tiny samples
-      const eps = 1e-6;
-      const clicks_s = clicks + 1; // add-one smoothing
-      const purchases_s = purchases + 1e-3; // tiny smoothing
-      const cvr = purchases_s / clicks_s; // approximate CVR
+      // CTR raw and smoothed
+      const ctrRaw = impressions > 0 ? clicks / impressions : 0;
+      const nCtr = (impressions || 0) + (smoothing ? (alphaCtr + betaCtr) : 0);
+      const pCtr = ((clicks || 0) + (smoothing ? alphaCtr : 0)) / (nCtr || 1);
+      const seCtr = Math.sqrt(Math.max(pCtr * (1 - pCtr) / Math.max(nCtr, 1), 0));
+      const ctrEff = lcb ? Math.max(0, pCtr - z * seCtr) : pCtr;
+
+      // CVR raw and smoothed
+      const cvrRaw = clicks > 0 ? purchases / clicks : 0;
+      const nCvr = (clicks || 0) + (smoothing ? (alphaCvr + betaCvr) : 0);
+      const pCvr = ((purchases || 0) + (smoothing ? alphaCvr : 0)) / (nCvr || 1);
+      const seCvr = Math.sqrt(Math.max(pCvr * (1 - pCvr) / Math.max(nCvr, 1), 0));
+      const cvrEff = lcb ? Math.max(0, pCvr - z * seCvr) : pCvr;
+
       const aov = purchases > 0 ? purchase_value / purchases : 0;
 
-      // RPME profit heuristic from memory: 1000*CTR*CVR*AOV - CPM
-      const rpme_profit = 1000 * (ctr) * (cvr) * (aov) - cpm;
+      // RPME profit heuristic from decisions: 1000*CTR*CVR*AOV - CPM
+      const rpme_profit = 1000 * (ctrEff) * (cvrEff) * (aov) - cpm;
 
       // Extract ROAS (can be number or array of {action_type, value})
       let roas = 0;
@@ -101,12 +118,14 @@ export async function GET(req: Request) {
         purchase_value,
         spend,
         ctr_pct: ctrPct,
-        cvr,
+        cvr: cvrRaw,
         aov,
         cpm,
         rpme_profit,
         purchase_roas: roas,
         score,
+        ctr_s: ctrEff,
+        cvr_s: cvrEff,
       };
     });
 

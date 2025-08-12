@@ -8,6 +8,7 @@ export default function Home() {
   const [similarity, setSimilarity] = useState(0.7);
   const [autoPublish, setAutoPublish] = useState(false);
   const [persistToDb, setPersistToDb] = useState(false);
+  const [breakdowns, setBreakdowns] = useState('');
   const [metaConnected, setMetaConnected] = useState<null | boolean>(null);
   const [metaExpiresAt, setMetaExpiresAt] = useState<string | null>(null);
   const [loading, setLoading] = useState<string | null>(null);
@@ -52,7 +53,10 @@ export default function Home() {
   const fetchTopCreatives = () => callApi(`/api/meta/insights/top-creatives?days=${lookback}`);
   const sendTestPurchase = () => callApi(`/api/meta/capi-test?value=12.34&currency=USD`);
   const fetchRanked = () => callApi(`/api/meta/insights/ranked?days=${lookback}`);
-  const ingestNormalize = () => callApi(`/api/meta/ingest?days=${lookback}${persistToDb ? '&persist=1' : ''}`);
+  const ingestNormalize = () => {
+    const bq = breakdowns.trim() ? `&breakdowns=${encodeURIComponent(breakdowns.trim())}` : '';
+    return callApi(`/api/meta/ingest?days=${lookback}${persistToDb ? '&persist=1' : ''}${bq}`);
+  };
 
   return (
     <div className="stack">
@@ -126,6 +130,16 @@ export default function Home() {
           <label className="toggle">
             <input type="checkbox" checked={persistToDb} onChange={(e) => setPersistToDb(e.target.checked)} />
             <span>Persist to DB on ingest</span>
+          </label>
+          <label style={{ display: 'flex', gap: 8, alignItems: 'center', marginLeft: 12 }}>
+            <span className="hint">Breakdowns</span>
+            <input
+              type="text"
+              value={breakdowns}
+              onChange={(e) => setBreakdowns(e.target.value)}
+              placeholder="e.g. publisher_platform,platform_position"
+              style={{ minWidth: 320 }}
+            />
           </label>
         </div>
         {error && <p className="hint" style={{ color: 'crimson' }}>Error: {error}</p>}

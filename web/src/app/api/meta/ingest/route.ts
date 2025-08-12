@@ -24,6 +24,10 @@ export async function GET(req: Request) {
   const limit = Math.min(Math.max(Number(searchParams.get('limit') || '1000'), 1), 5000);
   const persist = searchParams.get('persist') === '1' || searchParams.get('persist') === 'true';
   const breakdowns = searchParams.get('breakdowns') || '';
+  const breakdownKeys = breakdowns
+    .split(',')
+    .map((k) => k.trim())
+    .filter((k) => !!k);
 
   const fields = [
     'ad_id',
@@ -85,6 +89,12 @@ export async function GET(req: Request) {
       const rpme_profit = 1000 * ctr * cvr * aov - cpm;
       const score = roas * 1000 + rpme_profit + purchases * 50 + (purchase_value || 0) * 0.1;
 
+      // Capture breakdown dimensions if requested
+      const dims: Record<string, any> = {};
+      for (const k of breakdownKeys) {
+        if (r[k] !== undefined && r[k] !== null) dims[k] = r[k];
+      }
+
       return {
         ad_id: r.ad_id,
         ad_name: r.ad_name,
@@ -100,6 +110,7 @@ export async function GET(req: Request) {
         aov,
         rpme_profit,
         score,
+        dims,
       };
     });
 
@@ -120,9 +131,19 @@ export async function GET(req: Request) {
             const base = idx * 11;
             valuesPlaceholders.push(`($${base + 1},$${base + 2},$${base + 3},$${base + 4},$${base + 5},$${base + 6},$${base + 7},$${base + 8},$${base + 9},$${base + 10},$${base + 11}, NOW())`);
             const roas = n.purchase_roas && n.purchase_roas > 0 ? Number(n.purchase_roas) : (n.spend > 0 ? Number(n.purchase_value) / Number(n.spend) : null);
+            const scopeValue = breakdownKeys.length ? 'asset_combo' : 'ad';
+            // Build composite ref_id: ad_id|k=v|k2=v2 (only for provided breakdowns)
+            const refParts: string[] = [String(n.ad_id)];
+            if (breakdownKeys.length && n.dims) {
+              for (const k of breakdownKeys) {
+                const v = (n.dims as any)[k];
+                if (v !== undefined && v !== null) refParts.push(`${k}=${String(v)}`);
+              }
+            }
+            const compositeRef = refParts.join('|');
             params.push(
-              'ad',               // scope
-              n.ad_id,            // ref_id
+              scopeValue,               // scope
+              compositeRef,            // ref_id
               sinceStr,           // window_since
               untilStr,           // window_until
               Number(n.impressions) || 0,
